@@ -18,10 +18,26 @@ startScheduler();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors({
-  origin: "https://myplanner-ronit.vercel.app", // ✅ your deployed frontend
-  credentials: true
-}));
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "https://myplanner-ronit.vercel.app",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Allow non-browser clients (curl/postman) that send no Origin
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 

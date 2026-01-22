@@ -1,31 +1,38 @@
 import nodemailer from 'nodemailer';
 import Event from '../models/eventModel.js';
 
-// Configure transporter with more options
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // true for 465, false for other ports
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  tls: {
-    rejectUnauthorized: false // For local testing only (remove in production)
-  }
-});
+const emailEnabled = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 
-// Verify connection configuration
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('SMTP Connection Error:', error);
-  } else {
-    console.log('Server is ready to send emails');
-  }
-});
+// Configure transporter with more options
+const transporter = emailEnabled
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+      tls: {
+        rejectUnauthorized: false, // For local testing only (remove in production)
+      },
+    })
+  : null;
+
+if (transporter) {
+  // Verify connection configuration
+  transporter.verify((error) => {
+    if (error) {
+      console.error('SMTP Connection Error:', error);
+    } else {
+      console.log('Server is ready to send emails');
+    }
+  });
+}
 
 export const checkAndSendNotifications = async () => {
+  if (!emailEnabled || !transporter) return;
   try {
     const now = new Date();
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
@@ -59,6 +66,7 @@ export const checkAndSendNotifications = async () => {
 };
 
 const sendNotificationEmail = async (event) => {
+  if (!transporter) return;
   const mailOptions = {
     from: `"Task Reminder" <${process.env.EMAIL_USER}>`,
     to: event.user.email,
