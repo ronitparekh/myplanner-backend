@@ -27,12 +27,28 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
 ].filter(Boolean);
 
+const isAllowedDevOrigin = (origin) => {
+  try {
+    const url = new URL(origin);
+    const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    const port = Number(url.port);
+
+    // Vite dev server commonly uses 5173 and will auto-increment.
+    return isLocalhost && port >= 5170 && port <= 5199;
+  } catch {
+    return false;
+  }
+};
+
 app.use(
   cors({
     origin: (origin, cb) => {
       // Allow non-browser clients (curl/postman) that send no Origin
       if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (process.env.NODE_ENV !== "production" && isAllowedDevOrigin(origin)) {
+        return cb(null, true);
+      }
       return cb(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
