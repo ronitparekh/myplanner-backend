@@ -18,6 +18,12 @@ startScheduler();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+app.get("/wake", (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Cache-Control", "no-store");
+  res.status(200).send("Server awake");
+});
+
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "https://myplanner-ronit.vercel.app",
