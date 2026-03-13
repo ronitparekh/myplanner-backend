@@ -1,6 +1,16 @@
 import nodemailer from 'nodemailer';
 import Event from '../models/eventModel.js';
 
+const reminderToMinutes = {
+  none: null,
+  '5m': 5,
+  '10m': 10,
+  '15m': 15,
+  '30m': 30,
+  '1h': 60,
+  '1d': 1440,
+};
+
 const emailEnabled = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 
 // Configure transporter with more options
@@ -31,26 +41,54 @@ if (transporter) {
   });
 }
 
+const getEventTitle = (event) => event.title || event.text || 'Upcoming event';
+
+const getReminderLeadMinutes = (event) => {
+  if (event.reminder === 'custom') {
+    const customMinutes = Number(event.customReminderMinutes);
+    return Number.isFinite(customMinutes) && customMinutes > 0 ? customMinutes : null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(reminderToMinutes, event.reminder)) {
+    return reminderToMinutes[event.reminder];
+  }
+
+  return Number.isFinite(event.notifyBefore) ? event.notifyBefore : 60;
+};
+
+const getEventStart = (event) => {
+  if (event.startDateTime) return new Date(event.startDateTime);
+  return new Date(event.date);
+};
+
 export const checkAndSendNotifications = async () => {
   if (!emailEnabled || !transporter) return;
   try {
     const now = new Date();
-    const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-    
-    console.log(`Checking for events between ${now} and ${oneHourLater}`);
-    
+
+    console.log(`Checking for reminders at ${now.toISOString()}`);
+
     const events = await Event.find({
-      date: {
-        $gte: now,
-        $lte: oneHourLater
-      },
-      notificationSent: false
+      type: 'event',
+      notificationSent: false,
     }).populate('user', 'email name');
 
     console.log(`Found ${events.length} events to notify`);
     
     for (const event of events) {
       try {
+        const leadMinutes = getReminderLeadMinutes(event);
+        if (leadMinutes === null) continue;
+
+        const start = getEventStart(event);
+        if (Number.isNaN(start.getTime())) continue;
+
+        const reminderTime = new Date(start.getTime() - leadMinutes * 60 * 1000);
+
+        if (start < now || reminderTime > now) {
+          continue;
+        }
+
         console.log(`Sending notification for event: ${event._id}`);
         await sendNotificationEmail(event);
         event.notificationSent = true;
@@ -67,22 +105,24 @@ export const checkAndSendNotifications = async () => {
 
 const sendNotificationEmail = async (event) => {
   if (!transporter) return;
+  const title = getEventTitle(event);
+  const start = getEventStart(event);
   const mailOptions = {
     from: `"Task Reminder" <${process.env.EMAIL_USER}>`,
     to: event.user.email,
-    subject: `⏰ Reminder: ${event.text}`,
+    subject: `Reminder: ${title}`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #ef9011;">Your event is coming up!</h2>
         <div style="background: #f5f5f5; padding: 20px; border-radius: 5px;">
-          <p><strong>Event:</strong> ${event.text}</p>
-          <p><strong>Time:</strong> ${new Date(event.date).toLocaleString()}</p>
+          <p><strong>Event:</strong> ${title}</p>
+          <p><strong>Time:</strong> ${start.toLocaleString()}</p>
         </div>
-        <p style="margin-top: 20px;">This is a reminder that your event starts in 1 hour.</p>
+        <p style="margin-top: 20px;">This is your scheduled reminder for the event.</p>
       </div>
     `,
     // Add text version for non-HTML clients
-    text: `Reminder: ${event.text}\nTime: ${new Date(event.date).toLocaleString()}\n\nThis event starts in 1 hour.`
+    text: `Reminder: ${title}\nTime: ${start.toLocaleString()}\n\nThis is your scheduled reminder for the event.`
   };
 
   const info = await transporter.sendMail(mailOptions);
